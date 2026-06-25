@@ -1,245 +1,180 @@
-# SecRAG
+# SecRAG Pro
 
-**SecRAG** (Secure Retrieval-Augmented Generation) is a production-grade private RAG system for querying PDF documents. Built over four months, it evolved from a basic vector search demo into a fully-featured pipeline with hybrid retrieval, a cross-encoder reranker, citation verification, and an automated evaluation framework.
+A production-grade RAG system with intelligent LLM cost routing — combining hybrid retrieval, citation verification, and automated model selection to deliver high-quality answers at a fraction of the cost.
 
----
-
-## What It Does
-
-- Upload PDF documents and query them in natural language
-- Retrieve context using semantic search, BM25 keyword search, or hybrid fusion
-- Generate grounded answers with inline chunk citations
-- Verify every citation using an LLM-as-judge pass
-- Run fully locally or inside Docker with no data leaving your machine
+**62.3% cost reduction on answer generation | 99.6% citation accuracy | 4.15/5.0 answer quality**
 
 ---
 
-## Evaluation Results
+## What it is
 
-Evaluated on a 48-question golden Q&A dataset against the BERT paper (Devlin et al., 2019):
+SecRAG Pro integrates two production systems:
 
-| Metric | Score |
-|---|---|
-| Average answer quality | 4.15 / 5.0 |
-| Citation accuracy | 99.6% |
-| Questions scored 4 or 5 | 83% |
-| Total questions | 48 |
+- **SecRAG** — a hybrid RAG pipeline with BM25 + semantic retrieval, cross-encoder reranking, and LLM-as-judge citation verification
+- **LLM Cost Autopilot** — an intelligent routing layer that classifies each query's complexity and routes it to the cheapest capable model
 
----
-
-## How It Was Built
-
-### Month 1 — Core RAG Foundation
-Started with the fundamentals: PDF text extraction, sentence-aware chunking, MiniLM embeddings, and a basic cosine similarity retriever. The goal was to get a working end-to-end pipeline before adding any complexity.
-
-- PDF ingestion with `pypdf`
-- Sentence-based chunking with character span tracking
-- `all-MiniLM-L6-v2` embeddings via `sentence-transformers`
-- FastAPI backend with API key auth and request logging
-- React + Vite frontend with dark mode and retrieval mode selector
-
-### Month 2 — Hybrid Retrieval
-Added BM25 sparse retrieval alongside dense vector search, then combined them using a weighted fusion layer. This significantly improved performance on technical documents where exact keyword matching matters.
-
-- `rank-bm25` integration for sparse lexical scoring
-- Weighted hybrid fusion (configurable alpha)
-- Three retrieval modes: Semantic, BM25, Hybrid
-- Toggleable from the frontend with no backend restart needed
-
-### Month 3 — Production Hardening
-Migrated from flat `.npy` file storage to ChromaDB for persistent, scalable vector indexing. Added near-duplicate detection at ingestion time, three chunking strategies, and Reciprocal Rank Fusion to replace the weighted linear combination.
-
-- **ChromaDB** persistent vector store replacing `.npy` files
-- **Near-duplicate deduplication** at ingestion (cosine threshold 0.95)
-- **Three chunking strategies**: fixed-size, sentence-aware, semantic (topic-boundary detection)
-- **Reciprocal Rank Fusion (RRF)** replacing weighted hybrid combination
-- **Cross-encoder reranker** (`ms-marco-MiniLM-L-6-v2`) as a second-pass filter: top-20 candidates → top-5
-
-### Month 4 — Quality Layer and Eval Framework
-Added citation verification using GPT-4o-mini as judge, an automated evaluation framework with a golden Q&A dataset, and chunking strategy comparison tooling. Wired everything into the API response so every answer now returns a `citation_accuracy` score.
-
-- **Citation verification**: parses `[Chunk N]` markers, checks each claim against its source chunk
-- **LLM-as-judge** scoring with per-citation support/unsupported verdicts
-- **Golden Q&A eval framework**: `GoldenDataset` class, `run_eval()`, per-difficulty and per-category breakdowns
-- **Chunking strategy comparison**: run all three strategies against the same eval suite
-- **Structured answer format**: `verified_answer`, `citation_accuracy`, `citation_details` in every `/answer` response
+The result: every question asked of a document gets answered by the right model at the right cost. A simple factual lookup routes to Llama 3.2 for free. A complex synthesis question routes to GPT-4o or Claude Sonnet. The system decides automatically — no configuration needed per query.
 
 ---
 
 ## Architecture
 
-### Retrieval Pipeline
-
 ```
-Query
-  → Embed (MiniLM)
-  → Dense retrieval from ChromaDB (top-20)
-  → BM25 sparse retrieval (top-20)
-  → RRF fusion
-  → Cross-encoder reranker (top-20 → top-5)
-  → LLM answer generation with [Chunk N] citations
-  → Citation verification (LLM-as-judge)
-  → Response
-```
-
-### Backend Structure
-
-```
-backend/
-├── app.py
-├── utils/
-│   ├── vector_store.py        # ChromaDB layer + deduplication
-│   ├── chunking_strategies.py # fixed / sentence / semantic
-│   ├── retriever.py           # RRF fusion + reranker
-│   ├── reranker.py            # cross-encoder reranker
-│   ├── citation_verifier.py   # LLM-as-judge citation check
-│   ├── eval_framework.py      # golden Q&A eval suite
-│   ├── embeddings.py          # MiniLM embedding layer
-│   ├── bm25.py                # BM25 sparse retrieval
-│   ├── uploader.py            # PDF ingestion pipeline
-│   └── llm.py                 # OpenAI answer generation
-├── data/
-│   └── chroma/                # ChromaDB persistent storage
-├── requirements.txt
-└── Dockerfile
-```
-
-### Frontend Structure
-
-```
-frontend/
-├── src/
-│   └── App.jsx                # React single-file app
-├── Dockerfile
-└── vite.config.js
+User Question
+      |
+      v
+SecRAG Pro — Hybrid Retrieval (BM25 + Semantic)
+      |
+      v
+Cross-Encoder Reranker (ms-marco-MiniLM-L-6-v2)
+      |
+      v
+Top-K Chunks selected
+      |
+      v
+LLM Cost Autopilot /v1/completions
+      |
+      +-- Tier 1 (simple)   --> Llama 3.2 (free, local)
+      +-- Tier 2 (moderate) --> GPT-4o Mini or Claude Haiku
+      +-- Tier 3 (complex)  --> Claude Sonnet or GPT-4o
+      |
+      v
+Answer with inline citations
+      |
+      v
+Citation Verifier (LLM-as-judge, GPT-4o Mini)
+      |
+      v
+Verified answer + citation accuracy score returned to caller
 ```
 
 ---
 
-## API Response Format
+## Results
 
-Every `/answer` call returns:
+| Metric | Value |
+|--------|-------|
+| Citation accuracy | 99.6% |
+| Average answer quality | 4.15 / 5.0 |
+| Cost reduction vs all-GPT-4o | 62.3% |
+| Total requests in load test | 513 |
+| Failed requests | 0 |
+| Classifier accuracy | 97%+ |
 
-```json
-{
-  "filename": "document.pdf",
-  "query": "What is X?",
-  "answer": "X is ... [Chunk 3]. It was introduced in ... [Chunk 7].",
-  "verified_answer": "X is ... [Chunk 3]. It was introduced in ... [Chunk 7].",
-  "citation_accuracy": 0.92,
-  "citation_details": [
-    {
-      "chunk_id": "3",
-      "claim": "X is ...",
-      "supported": true,
-      "confidence": 0.95,
-      "reason": "Source text directly states this."
-    }
-  ],
-  "citations": [
-    { "chunk_id": "3", "score": 0.033, "char_range": [412, 595] }
-  ]
-}
-```
+### Model distribution on load test
+| Model | Traffic share |
+|-------|--------------|
+| GPT-4o Mini | 41.3% |
+| Llama 3.2 (free, local) | 28.3% |
+| GPT-4o | 19.3% |
+| Claude Sonnet | 11.1% |
+
+---
+
+## Stack
+
+- **Backend** — FastAPI, Python 3.11
+- **Retrieval** — BM25 (rank-bm25) + Semantic (sentence-transformers/all-MiniLM-L6-v2)
+- **Reranker** — cross-encoder ms-marco-MiniLM-L-6-v2
+- **Vector store** — ChromaDB
+- **LLM routing** — LLM Cost Autopilot (scikit-learn RandomForest classifier, 221 training prompts)
+- **LLM providers** — OpenAI (GPT-4o, GPT-4o Mini), Anthropic (Claude Sonnet, Claude Haiku), Ollama (Llama 3.2)
+- **Citation verification** — LLM-as-judge (GPT-4o Mini)
+- **Frontend** — React + Tailwind
+- **Containerization** — Docker + docker-compose
+
+---
+
+## How it works
+
+**1. Upload a document**
+PDF is chunked using sentence-aware splitting, embedded with all-MiniLM-L6-v2, and stored in ChromaDB.
+
+**2. Ask a question**
+The query runs through hybrid retrieval — BM25 for keyword matching, semantic search for meaning, combined with a configurable alpha weight. A cross-encoder reranker scores the top candidates.
+
+**3. Intelligent routing**
+The top chunks and query are sent to the LLM Cost Autopilot. A RandomForest classifier (trained on 221 labeled prompts, 97%+ accuracy) classifies the query complexity into Tier 1, 2, or 3 and routes to the cheapest model that can handle it.
+
+**4. Answer generation**
+The routed model generates an answer using only the retrieved chunks, with mandatory inline citations ([Chunk N]) after every claim.
+
+**5. Citation verification**
+GPT-4o Mini verifies each citation against the source chunk. Unsupported citations are flagged in the response.
+
+**6. Response**
+The API returns the answer, verified answer, citation accuracy score, cost, model used, and routing metadata.
 
 ---
 
 ## Setup
 
-### Requirements
+**Prerequisites**
+- LLM Cost Autopilot running on port 8000 (see [llm-cost-autopilot](https://github.com/vaibhav-badoliasoft/llm-cost-autopilot))
+- Ollama running locally with Llama 3.2 pulled
 
-```
-Python 3.10+
-Node.js 18+
-OpenAI API key
-```
-
-### Environment
-
-Backend `.env`:
-```
-OPENAI_API_KEY=your_key_here
-SECRAG_API_KEY=                  # optional, leave blank for local use
-ALLOWED_ORIGINS=http://localhost:5173
-MAX_UPLOAD_MB=25
-```
-
-Frontend `.env`:
-```
-VITE_API_BASE=http://localhost:8000
-VITE_API_KEY=
-```
-
-### Run Locally
-
+**1. Clone and create virtual environment**
 ```bash
-# Backend
-cd backend
+git clone https://github.com/vaibhav-badoliasoft/SecRAG-Pro.git
+cd SecRAG-Pro
 python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # Mac/Linux
-pip install -r requirements.txt
-uvicorn app:app --reload --port 8000
-
-# Frontend
-cd frontend
-npm install
-npm run dev
+venv\Scripts\activate
 ```
 
-Open `http://localhost:5173`
-
-### Docker
-
+**2. Install dependencies**
 ```bash
-docker compose up --build
+cd backend
+pip install -r requirements.txt
 ```
 
-Access:
-- Backend: `http://localhost:8000`
-- Frontend: `http://localhost:5173`
+**3. Configure environment**
+```bash
+# backend/.env
+OPENAI_API_KEY=sk-...
+AUTOPILOT_URL=http://localhost:8000/v1/completions
+USE_AUTOPILOT=true
+AUTOPILOT_TIMEOUT=120
+```
+
+**4. Start LLM Cost Autopilot first**
+```bash
+cd path/to/llm-cost-autopilot/backend
+python app.py
+```
+
+**5. Start SecRAG Pro**
+```bash
+cd SecRAG-Pro/backend
+uvicorn app:app --host 0.0.0.0 --port 8001 --reload
+```
+
+**6. Open API docs**
+```
+http://localhost:8001/docs
+```
 
 ---
 
-## Key Dependencies
+## API
 
-| Package | Purpose |
-|---|---|
-| `fastapi` | API framework |
-| `sentence-transformers` | MiniLM embeddings + cross-encoder reranker |
-| `chromadb` | Persistent vector store |
-| `rank-bm25` | Sparse keyword retrieval |
-| `pypdf` | PDF text extraction |
-| `openai` | LLM answer generation + citation verification |
-| `numpy` | Vector operations |
-
----
-
-## Design Decisions
-
-**Why ChromaDB over FAISS?** ChromaDB persists to disk automatically, supports metadata filtering, and requires zero infrastructure. FAISS is faster at scale but needs manual index management.
-
-**Why RRF over weighted fusion?** Weighted fusion requires tuning alpha per use case. RRF is rank-based so it's robust to score scale differences between dense and sparse retrievers, and it consistently outperforms weighted fusion without any tuning.
-
-**Why a cross-encoder reranker?** Bi-encoders (like MiniLM) encode query and document independently, which is fast but loses interaction signals. A cross-encoder sees both together, giving much higher relevance precision on the final top-5 results at acceptable latency.
-
-**Why citation verification?** RAG systems can retrieve the right chunks but still hallucinate claims not present in those chunks. Verifying each `[Chunk N]` citation independently catches this class of error that retrieval metrics alone cannot detect.
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| /upload | POST | Upload and process a PDF |
+| /answer | POST | Ask a question, get routed answer with citations |
+| /summarize | POST | Summarize a document with routing metadata |
+| /retrieve | POST | Raw hybrid retrieval without generation |
+| /list_docs | GET | List uploaded documents |
+| /health | GET | Health check |
 
 ---
 
-## What SecRAG Demonstrates
+## Related projects
 
-- End-to-end RAG pipeline from ingestion to verified answer
-- Hybrid retrieval with RRF fusion
-- Two-stage retrieval: fast recall (top-20) then precise reranking (top-5)
-- Production observability: structured logging, request IDs, health endpoint
-- Quality measurement: citation accuracy as a deployable metric
-- Modular architecture: each component is independently replaceable
+- [LLM Cost Autopilot](https://github.com/vaibhav-badoliasoft/llm-cost-autopilot) — the routing layer powering SecRAG Pro's model selection
+- [SecRAG](https://github.com/vaibhav-badoliasoft/secrag) — the original RAG system this is built on
 
 ---
 
-## Name
+## Author
 
-SecRAG = **Sec**ure **R**etrieval-**A**ugmented **G**eneration.
-
-Built for private document environments where data does not leave the deployment boundary.
+Vaibhav Saini — [GitHub](https://github.com/vaibhav-badoliasoft) · [Portfolio](https://vaibhavsaini-portfolio.vercel.app)

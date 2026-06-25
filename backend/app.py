@@ -48,11 +48,11 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = (BASE_DIR / ".." / "data").resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+
 @app.middleware("http")
 async def log_and_auth(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start = time.time()
-
     path = request.url.path
 
     if SECRAG_API_KEY:
@@ -98,6 +98,7 @@ async def log_and_auth(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Process-Time"] = f"{elapsed:.4f}"
     return response
+
 
 def normalize_pdf_filename(name: str) -> str:
     name = (name or "").strip()
@@ -146,7 +147,7 @@ def artifact_stats_for_pdf(pdf_name: str):
 
 @app.get("/health")
 def health_check():
-    return {"status": "SecRAG backend is running", "allowed_origins": ALLOWED_ORIGINS}
+    return {"status": "SecRAG Pro backend is running", "allowed_origins": ALLOWED_ORIGINS}
 
 
 @app.get("/list_docs")
@@ -195,7 +196,6 @@ class RetrieveRequest(BaseModel):
 @app.post("/retrieve")
 def retrieve(req: RetrieveRequest):
     pdf_name = normalize_pdf_filename(req.filename)
-
     chunk_path, emb_path = get_artifact_paths(pdf_name, DATA_DIR)
 
     if not chunk_path.exists():
@@ -213,7 +213,13 @@ def retrieve(req: RetrieveRequest):
             mode=req.mode,
             alpha=req.alpha
         )
-        return {"filename": pdf_name, "query": req.query, "top_k": req.top_k, "mode": req.mode, "results": results}
+        return {
+            "filename": pdf_name,
+            "query": req.query,
+            "top_k": req.top_k,
+            "mode": req.mode,
+            "results": results
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -232,7 +238,6 @@ class AnswerRequest(BaseModel):
 @app.post("/answer")
 def answer(req: AnswerRequest):
     pdf_name = normalize_pdf_filename(req.filename)
-
     chunk_path, emb_path = get_artifact_paths(pdf_name, DATA_DIR)
 
     if not chunk_path.exists() or not emb_path.exists():
@@ -249,11 +254,18 @@ def answer(req: AnswerRequest):
         )
 
         if not retrieved:
-            return {"filename": pdf_name, "query": req.query, "answer": "No relevant context found.", "citations": []}
+            return {
+                "filename": pdf_name,
+                "query": req.query,
+                "answer": "No relevant context found.",
+                "citations": [],
+                "routing": None,
+            }
 
-        answer_text = generate_answer(req.query, retrieved)
+        answer_result = generate_answer(req.query, retrieved)
+        answer_text = answer_result["answer"]
+        routing = answer_result.get("routing", {})
 
-        from utils.citation_verifier import verify_citations
         verification = verify_citations(answer_text, retrieved)
 
         return {
@@ -273,6 +285,7 @@ def answer(req: AnswerRequest):
                 }
                 for c in retrieved
             ],
+            "routing": routing,
         }
 
     except ValueError as e:
@@ -365,13 +378,20 @@ def summarize(req: SummarizeRequest):
         final_chunks = [merged[cid] for cid in final_ids if cid in merged]
 
         if not final_chunks:
-            return {"filename": pdf_name, "summary": "I do not know.", "citations": []}
+            return {
+                "filename": pdf_name,
+                "summary": "I do not know.",
+                "citations": [],
+                "routing": None,
+            }
 
-        summary_text = summarize_from_chunks(
+        summarize_result = summarize_from_chunks(
             filename=pdf_name,
             chunks=final_chunks,
             max_output_tokens=req.max_output_tokens
         )
+        summary_text = summarize_result["summary"]
+        routing = summarize_result.get("routing", {})
 
         citations = [
             {
@@ -389,6 +409,7 @@ def summarize(req: SummarizeRequest):
             "top_k": req.top_k,
             "mode": req.mode,
             "summary": summary_text,
+            "routing": routing,
             "citations": citations
         }
 
@@ -397,10 +418,10 @@ def summarize(req: SummarizeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Summarize failed: {e}")
 
+
 @app.delete("/documents/{filename}")
 def delete_document(filename: str):
     pdf_name = safe_pdf_name(filename)
-
     paths = get_all_related_paths(pdf_name, DATA_DIR)
 
     deleted = []
@@ -421,4 +442,3 @@ def delete_document(filename: str):
         "deleted": deleted,
         "missing": missing,
     }
-

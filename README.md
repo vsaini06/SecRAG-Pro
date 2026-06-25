@@ -115,7 +115,7 @@ The API returns the answer, verified answer, citation accuracy score, cost, mode
 
 **1. Clone and create virtual environment**
 ```bash
-git clone https://github.com/vaibhav-badoliasoft/SecRAG-Pro.git
+git clone https://github.com/vsaini06/SecRAG-Pro.git
 cd SecRAG-Pro
 python -m venv venv
 venv\Scripts\activate
@@ -170,11 +170,11 @@ http://localhost:8001/docs
 
 ## Related projects
 
-- [LLM Cost Autopilot](https://github.com/vaibhav-badoliasoft/llm-cost-autopilot): the routing layer powering SecRAG Pro's model selection
-- [SecRAG](https://github.com/vaibhav-badoliasoft/secrag): the original RAG system this is built on
+- [LLM Cost Autopilot](https://github.com/vsaini06/llm-cost-autopilot): the routing layer powering SecRAG Pro's model selection
+- [SecRAG](https://github.com/vsaini06/secrag): the original RAG system this is built on
 
 ---
 
 ## Author
 
-Vaibhav Saini: [GitHub](https://github.com/vaibhav-badoliasoft) · [Portfolio](https://vaibhavsaini-portfolio.vercel.app)
+Vaibhav Saini: [GitHub](https://github.com/vsaini06) · [Portfolio](https://vaibhavsaini-portfolio.vercel.app)
